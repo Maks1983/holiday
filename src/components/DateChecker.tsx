@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Holiday, COUNTRIES } from "../types";
+import { checkHolidayDate } from "../utils/holidayService";
 import { CalendarCheck2, Search, ArrowRight, ShieldAlert, BadgeCheck, XCircle, RefreshCw } from "lucide-react";
 
 interface DateCheckerProps {
@@ -23,15 +24,7 @@ export default function DateChecker({ countryCode, apiKey }: DateCheckerProps) {
     setResult(null);
 
     try {
-      const url = `/api/check-date?country_code=${selectedCC.toLowerCase()}&date=${date}&token=${encodeURIComponent(apiKey)}`;
-      const res = await fetch(url);
-      
-      if (!res.ok) {
-        const errPayload = await res.json();
-        throw new Error(errPayload.error || "Failed to query the Holiday API service.");
-      }
-
-      const data = await res.json();
+      const data = await checkHolidayDate(selectedCC, date, apiKey);
       setResult(data);
     } catch (err: any) {
       console.error(err);

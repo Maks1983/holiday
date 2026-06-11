@@ -10,6 +10,8 @@ interface HolidayListProps {
 export default function HolidayList({ holidays, selectedCountryName }: HolidayListProps) {
   const REFERENCE_TODAY = "2026-06-11";
 
+  const safeHolidays = Array.isArray(holidays) ? holidays : [];
+
   const [searchText, setSearchText] = useState("");
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
   const [fixedFilter, setFixedFilter] = useState<"all" | "fixed" | "floating">("all");
@@ -58,7 +60,7 @@ export default function HolidayList({ holidays, selectedCountryName }: HolidayLi
 
   // Find all available types in the active holiday array
   const availableTypesSet = new Set<string>();
-  holidays.forEach(h => {
+  safeHolidays.forEach(h => {
     h.types?.forEach(t => availableTypesSet.add(t));
   });
   const availableTypes = Array.from(availableTypesSet);
@@ -74,7 +76,7 @@ export default function HolidayList({ holidays, selectedCountryName }: HolidayLi
   };
 
   // Filters application
-  const filteredHolidays = holidays.filter(holiday => {
+  const filteredHolidays = safeHolidays.filter(holiday => {
     // 1. Text Search matching
     const searchMatch = 
       holiday.name.toLowerCase().includes(searchText.toLowerCase()) || 

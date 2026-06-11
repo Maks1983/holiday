@@ -10,21 +10,23 @@ export default function DashboardStats({ holidays, year }: DashboardStatsProps) 
   // Today's date reference is June 11, 2026
   const REFERENCE_TODAY = "2026-06-11";
 
-  const totalCount = holidays.length;
+  const safeHolidays = Array.isArray(holidays) ? holidays : [];
+
+  const totalCount = safeHolidays.length;
   
   // Public vs other types
-  const publicHolidays = holidays.filter(h => h.types?.includes("Public"));
+  const publicHolidays = safeHolidays.filter(h => h.types?.includes("Public"));
   const publicCount = publicHolidays.length;
 
   const otherCount = totalCount - publicCount;
 
   // Fixed vs Variable
-  const fixedCount = holidays.filter(h => h.fixed).length;
+  const fixedCount = safeHolidays.filter(h => h.fixed).length;
   const variableCount = totalCount - fixedCount;
   const fixedPercentage = totalCount > 0 ? Math.round((fixedCount / totalCount) * 100) : 0;
 
   // Remaining list
-  const upcomingCount = holidays.filter(h => h.date >= REFERENCE_TODAY).length;
+  const upcomingCount = safeHolidays.filter(h => h.date >= REFERENCE_TODAY).length;
 
   // Breakdown by month
   const monthNames = [
@@ -33,10 +35,15 @@ export default function DashboardStats({ holidays, year }: DashboardStatsProps) 
   ];
 
   const monthDistribution = Array(12).fill(0);
-  holidays.forEach(h => {
-    const month = parseInt(h.date.split("-")[1], 10) - 1;
-    if (month >= 0 && month < 12) {
-      monthDistribution[month]++;
+  safeHolidays.forEach(h => {
+    if (h && h.date) {
+      const parts = h.date.split("-");
+      if (parts.length > 1) {
+        const month = parseInt(parts[1], 10) - 1;
+        if (month >= 0 && month < 12) {
+          monthDistribution[month]++;
+        }
+      }
     }
   });
 
@@ -44,7 +51,7 @@ export default function DashboardStats({ holidays, year }: DashboardStatsProps) 
 
   // Breakdown by type
   const typeCounts: Record<string, number> = {};
-  holidays.forEach(h => {
+  safeHolidays.forEach(h => {
     h.types?.forEach(t => {
       typeCounts[t] = (typeCounts[t] || 0) + 1;
     });

@@ -9,6 +9,8 @@ interface CalendarViewProps {
 }
 
 export default function CalendarView({ holidays, year }: CalendarViewProps) {
+  const safeHolidays = Array.isArray(holidays) ? holidays : [];
+
   // Let's support zooming into a month. null means showing all 12 mini months.
   const [zoomedMonth, setZoomedMonth] = useState<number | null>(null);
   const [selectedDayHoliday, setSelectedDayHoliday] = useState<Holiday | null>(null);
@@ -35,7 +37,7 @@ export default function CalendarView({ holidays, year }: CalendarViewProps) {
   // Helper: Get holidays for a specific day
   const getHolidaysForDay = (monthIndex: number, dayNum: number) => {
     const dateStr = `${year}-${String(monthIndex + 1).padStart(2, "0")}-${String(dayNum).padStart(2, "0")}`;
-    return holidays.filter(h => h.date === dateStr);
+    return safeHolidays.filter(h => h.date === dateStr);
   };
 
   // Render a mini-month calendar grid
@@ -166,7 +168,7 @@ export default function CalendarView({ holidays, year }: CalendarViewProps) {
       );
     }
 
-    const monthHolidaysList = holidays.filter(h => {
+    const monthHolidaysList = safeHolidays.filter(h => {
       const parts = h.date.split("-");
       return parseInt(parts[1], 10) - 1 === monthIndex;
     });

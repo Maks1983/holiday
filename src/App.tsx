@@ -5,6 +5,7 @@ import DashboardStats from "./components/DashboardStats";
 import CalendarView from "./components/CalendarView";
 import HolidayList from "./components/HolidayList";
 import DateChecker from "./components/DateChecker";
+import { getHolidays } from "./utils/holidayService";
 import { motion, AnimatePresence } from "motion/react";
 import { 
   Globe2, 
@@ -47,17 +48,10 @@ export default function App() {
     setLoading(true);
     setError(null);
     try {
-      const url = `/api/holidays?country_code=${countryCode.toLowerCase()}&year=${year}&token=${encodeURIComponent(apiKey)}`;
-      const res = await fetch(url);
-      
-      if (!res.ok) {
-        const errPayload = await res.json();
-        throw new Error(errPayload.error || "Failed to retrieve holidays data.");
-      }
-
-      const data = await res.json();
-      setHolidays(data.holidays || []);
-      setIsMock(data.isMock);
+      const data = await getHolidays(countryCode, year, apiKey);
+      const list = data && Array.isArray(data.holidays) ? data.holidays : [];
+      setHolidays(list);
+      setIsMock(!!(data && data.isMock));
     } catch (err: any) {
       console.error(err);
       setError(err.message || String(err));
