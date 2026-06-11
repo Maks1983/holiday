@@ -1,0 +1,6 @@
+{
+  "name": "International Holiday Dashboard",
+  "description": "A sleek, modern dashboard and calendar to visualize upcoming international holidays, check specific dates, and filter by types.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
