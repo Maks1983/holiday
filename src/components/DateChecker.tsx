@@ -6,9 +6,10 @@ import { CalendarCheck2, Search, ArrowRight, ShieldAlert, BadgeCheck, XCircle, R
 interface DateCheckerProps {
   countryCode: string;
   apiKey: string;
+  apiEndpoint: string;
 }
 
-export default function DateChecker({ countryCode, apiKey }: DateCheckerProps) {
+export default function DateChecker({ countryCode, apiKey, apiEndpoint }: DateCheckerProps) {
   const [date, setDate] = useState("2026-06-11"); // default to reference day
   const [selectedCC, setSelectedCC] = useState(countryCode);
   const [loading, setLoading] = useState(false);
@@ -24,7 +25,7 @@ export default function DateChecker({ countryCode, apiKey }: DateCheckerProps) {
     setResult(null);
 
     try {
-      const data = await checkHolidayDate(selectedCC, date, apiKey);
+      const data = await checkHolidayDate(selectedCC, date, apiKey, apiEndpoint);
       setResult(data);
     } catch (err: any) {
       console.error(err);
@@ -175,7 +176,7 @@ export default function DateChecker({ countryCode, apiKey }: DateCheckerProps) {
             <div className="flex justify-between items-center text-[10px] text-[#2c2c24]/50 mt-3 px-1">
               <span>AUDIT TIMEFRAME: {date}</span>
               <span className="font-mono bg-[#f5f5f0] text-[#2c2c24]/60 leading-none py-1 px-2.5 rounded-md uppercase font-semibold">
-                {result.isMock ? "Mock Source Sandbox" : "ABCyber Live Source"}
+                ABCyber Live Source
               </span>
             </div>
           </div>

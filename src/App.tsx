@@ -28,13 +28,15 @@ export default function App() {
     return localStorage.getItem("abcyber_holiday_api_key") || "";
   });
 
+  const [apiEndpoint, setApiEndpoint] = useState<string>(() => {
+    return localStorage.getItem("abcyber_holiday_api_endpoint") || "https://bs-sta-gateway.ext-abc.com";
+  });
+
   const [countryCode, setCountryCode] = useState("NO");
   const [year, setYear] = useState(2026);
   const [holidays, setHolidays] = useState<Holiday[]>([]);
-  const [isMock, setIsMock] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [fallbackReason, setFallbackReason] = useState<string | null>(null);
   
   // Views navigation state
   const [activeView, setActiveView] = useState<"calendar" | "timeline" | "auditor" | "settings">("calendar");
@@ -45,19 +47,26 @@ export default function App() {
     localStorage.setItem("abcyber_holiday_api_key", newKey);
   };
 
+  // Keep API Endpoint persisted in local storage
+  const handleApiEndpointChange = (newEndpoint: string) => {
+    setApiEndpoint(newEndpoint);
+    localStorage.setItem("abcyber_holiday_api_endpoint", newEndpoint);
+  };
+
   // Fetch holidays list
   const fetchHolidays = async () => {
+    if (!apiKey.trim()) {
+      setHolidays([]);
+      setError(null);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
-    setFallbackReason(null);
     try {
-      const data = await getHolidays(countryCode, year, apiKey);
+      const data = await getHolidays(countryCode, year, apiKey, apiEndpoint);
       const list = data && Array.isArray(data.holidays) ? data.holidays : [];
       setHolidays(list);
-      setIsMock(!!(data && data.isMock));
-      if (data && data.fallbackReason) {
-        setFallbackReason(data.fallbackReason);
-      }
     } catch (err: any) {
       console.error(err);
       setError(err.message || String(err));
@@ -68,7 +77,7 @@ export default function App() {
 
   useEffect(() => {
     fetchHolidays();
-  }, [countryCode, year, apiKey]);
+  }, [countryCode, year, apiKey, apiEndpoint]);
 
   const selectedCountry = COUNTRIES.find(c => c.code === countryCode) || COUNTRIES[0];
 
@@ -133,31 +142,22 @@ export default function App() {
             <button
               onClick={() => setActiveView("settings")}
               className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border transition-all ${
-                isMock
-                  ? (apiKey.trim() !== ""
-                      ? "bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100"
-                      : "bg-[#5a5a40]/10 text-[#5a5a40] border-[#5a5a40]/10 hover:bg-[#5a5a40]/15")
+                apiKey.trim() === ""
+                  ? "bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100"
                   : "bg-emerald-50 text-emerald-850 border-emerald-150 hover:bg-emerald-100"
               }`}
               id="status-header-indicator"
               title="Click to view API Settings"
             >
-              {isMock ? (
-                apiKey.trim() !== "" ? (
-                  <>
-                    <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0 animate-pulse" />
-                    <span className="hidden sm:inline">Gateway Failover</span>
-                  </>
-                ) : (
-                  <>
-                    <Cpu className="w-3.5 h-3.5 text-[#5a5a40] shrink-0 animate-pulse" />
-                    <span className="hidden sm:inline">Mock Mode</span>
-                  </>
-                )
+              {apiKey.trim() === "" ? (
+                <>
+                  <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0 select-none animate-pulse" />
+                  <span className="hidden sm:inline">Credentials Pending</span>
+                </>
               ) : (
                 <>
                   <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                  <span className="hidden sm:inline">ABC Gateway Live</span>
+                  <span className="hidden sm:inline">ABC Gateway Active</span>
                 </>
               )}
             </button>
@@ -217,21 +217,6 @@ export default function App() {
           </button>
         </div>
 
-        {/* Sandbox Failover Warnings Banner */}
-        {apiKey.trim() !== "" && isMock && fallbackReason && activeView !== "settings" && (
-          <div className="bg-amber-50/80 border border-amber-200/65 rounded-2xl p-5 flex items-start gap-3.5 text-xs text-amber-900 shadow-3xs" id="sandbox-failover-warning-banner">
-            <AlertCircle className="w-4.5 h-4.5 text-amber-600 shrink-0 mt-0.5" />
-            <div className="space-y-1">
-              <span className="font-bold text-amber-950 block">Sandbox Failover Active</span>
-              <p className="leading-relaxed opacity-90">
-                The live gateway returned a transaction exception ({fallbackReason.replace(/[{}"]/g, '')}). 
-                For presentation consistency, our environment has dynamically engaged <strong>Sandbox Failover</strong>. 
-                Full high-fidelity rosters are currently active for Norway, Sweden, UK, US, Germany, and more.
-              </p>
-            </div>
-          </div>
-        )}
-
         {/* Dashboard numerical analytics */}
         {!loading && !error && activeView !== "settings" && activeView !== "auditor" && (
           <DashboardStats holidays={holidays} year={year} />
@@ -239,7 +224,43 @@ export default function App() {
 
         {/* Content Viewer pane */}
         <div id="dashboard-content-viewer" className="relative min-h-96">
-          {loading ? (
+          {!apiKey.trim() && activeView !== "settings" ? (
+            <div className="bg-white border border-[#5a5a40]/10 rounded-3xl p-12 text-center max-w-xl mx-auto flex flex-col items-center space-y-6 shadow-xs" id="app-credentials-missing-screen">
+              <div className="p-4 bg-amber-50 text-amber-700 rounded-full border border-amber-100">
+                <ShieldCheck className="w-8 h-8 opacity-90 animate-pulse" />
+              </div>
+              <div className="space-y-2">
+                <h3 className="serif text-2xl font-bold text-[#2c2c24]">Authorization Key Required</h3>
+                <p className="text-xs text-[#2c2c24]/75 leading-relaxed max-w-md mx-auto">
+                  To audit enterprise holiday calendars, you must configure your access token in settings. 
+                  In alignment with strict data audit standards, local simulated mock datasets have been fully decommissioned.
+                </p>
+                <div className="bg-[#f5f5f0] border border-[#5a5a40]/10 rounded-xl p-4 text-left max-w-md mx-auto text-[11px] space-y-1.5 text-[#2c2c24]/80">
+                  <span className="font-semibold block text-[#2c2c24]">Audit Directives:</span>
+                  <div className="flex items-start gap-2">
+                    <span className="text-amber-600 font-bold">•</span>
+                    <span>No unverified mockup fallbacks can be loaded.</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="text-amber-600 font-bold">•</span>
+                    <span>An active Access Token (Bearer Auth) is required for each query.</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="text-amber-600 font-bold">•</span>
+                    <span>Verify your connection gateway endpoint setting is pointing to the correct API node.</span>
+                  </div>
+                </div>
+              </div>
+              <div className="flex justify-center">
+                <button
+                  onClick={() => setActiveView("settings")}
+                  className="px-5 py-2.5 bg-[#5A5A40] hover:bg-[#484833] text-white text-xs font-semibold rounded-xl transition-all shadow-sm cursor-pointer"
+                >
+                  Configure Gateway Settings
+                </button>
+              </div>
+            </div>
+          ) : loading ? (
             <div className="bg-white border border-[#5a5a40]/10 rounded-3xl p-16 text-center flex flex-col items-center justify-center space-y-3 shadow-xs" id="app-loading-screen">
               <RefreshCw className="w-10 h-10 text-[#5a5a40] animate-spin" />
               <p className="text-sm font-semibold text-[#2c2c24] animate-pulse">Communicating with Holiday API Gateways...</p>
@@ -275,7 +296,7 @@ export default function App() {
                   }}
                   className="px-4 py-2 bg-white hover:bg-stone-50 border border-[#5a5a40]/25 text-[#2c2c24] text-xs font-semibold rounded-lg transition-all"
                 >
-                  Configure Sandbox
+                  Configure Settings
                 </button>
               </div>
             </div>
@@ -296,10 +317,10 @@ export default function App() {
                   <HolidayList holidays={holidays} selectedCountryName={selectedCountry.name} />
                 )}
                 {activeView === "auditor" && (
-                  <DateChecker countryCode={countryCode} apiKey={apiKey} />
+                  <DateChecker countryCode={countryCode} apiKey={apiKey} apiEndpoint={apiEndpoint} />
                 )}
                 {activeView === "settings" && (
-                  <Settings apiKey={apiKey} onChangeApiKey={handleApiKeyChange} isMockMode={isMock} />
+                  <Settings apiKey={apiKey} onChangeApiKey={handleApiKeyChange} apiEndpoint={apiEndpoint} onChangeApiEndpoint={handleApiEndpointChange} />
                 )}
               </motion.div>
             </AnimatePresence>
