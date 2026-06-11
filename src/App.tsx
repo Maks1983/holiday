@@ -19,7 +19,8 @@ import {
   Cpu,
   Mail,
   Phone,
-  Building
+  Building,
+  AlertCircle
 } from "lucide-react";
 
 export default function App() {
@@ -33,6 +34,7 @@ export default function App() {
   const [isMock, setIsMock] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [fallbackReason, setFallbackReason] = useState<string | null>(null);
   
   // Views navigation state
   const [activeView, setActiveView] = useState<"calendar" | "timeline" | "auditor" | "settings">("calendar");
@@ -47,11 +49,15 @@ export default function App() {
   const fetchHolidays = async () => {
     setLoading(true);
     setError(null);
+    setFallbackReason(null);
     try {
       const data = await getHolidays(countryCode, year, apiKey);
       const list = data && Array.isArray(data.holidays) ? data.holidays : [];
       setHolidays(list);
       setIsMock(!!(data && data.isMock));
+      if (data && data.fallbackReason) {
+        setFallbackReason(data.fallbackReason);
+      }
     } catch (err: any) {
       console.error(err);
       setError(err.message || String(err));
@@ -128,17 +134,26 @@ export default function App() {
               onClick={() => setActiveView("settings")}
               className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border transition-all ${
                 isMock
-                  ? "bg-[#5a5a40]/10 text-[#5a5a40] border-[#5a5a40]/10 hover:bg-[#5a5a40]/15"
+                  ? (apiKey.trim() !== ""
+                      ? "bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100"
+                      : "bg-[#5a5a40]/10 text-[#5a5a40] border-[#5a5a40]/10 hover:bg-[#5a5a40]/15")
                   : "bg-emerald-50 text-emerald-850 border-emerald-150 hover:bg-emerald-100"
               }`}
               id="status-header-indicator"
               title="Click to view API Settings"
             >
               {isMock ? (
-                <>
-                  <Cpu className="w-3.5 h-3.5 text-[#5a5a40] shrink-0 animate-pulse" />
-                  <span className="hidden sm:inline">Mock Mode</span>
-                </>
+                apiKey.trim() !== "" ? (
+                  <>
+                    <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0 animate-pulse" />
+                    <span className="hidden sm:inline">Gateway Failover</span>
+                  </>
+                ) : (
+                  <>
+                    <Cpu className="w-3.5 h-3.5 text-[#5a5a40] shrink-0 animate-pulse" />
+                    <span className="hidden sm:inline">Mock Mode</span>
+                  </>
+                )
               ) : (
                 <>
                   <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
@@ -201,6 +216,21 @@ export default function App() {
             API Key & Credentials
           </button>
         </div>
+
+        {/* Sandbox Failover Warnings Banner */}
+        {apiKey.trim() !== "" && isMock && fallbackReason && activeView !== "settings" && (
+          <div className="bg-amber-50/80 border border-amber-200/65 rounded-2xl p-5 flex items-start gap-3.5 text-xs text-amber-900 shadow-3xs" id="sandbox-failover-warning-banner">
+            <AlertCircle className="w-4.5 h-4.5 text-amber-600 shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <span className="font-bold text-amber-950 block">Sandbox Failover Active</span>
+              <p className="leading-relaxed opacity-90">
+                The live gateway returned a transaction exception ({fallbackReason.replace(/[{}"]/g, '')}). 
+                For presentation consistency, our environment has dynamically engaged <strong>Sandbox Failover</strong>. 
+                Full high-fidelity rosters are currently active for Norway, Sweden, UK, US, Germany, and more.
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Dashboard numerical analytics */}
         {!loading && !error && activeView !== "settings" && activeView !== "auditor" && (

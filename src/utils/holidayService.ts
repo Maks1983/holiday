@@ -185,12 +185,31 @@ export function generateMockHolidays(countryCode: string, year: number): Holiday
   return holidays.sort((a, b) => a.date.localeCompare(b.date));
 }
 
+function extractHolidaysList(data: any): any[] {
+  if (!data) return [];
+  if (Array.isArray(data)) return data;
+  if (data && typeof data === "object") {
+    if (Array.isArray(data.holidays)) return data.holidays;
+    if (Array.isArray(data.data)) return data.data;
+    if (Array.isArray(data.results)) return data.results;
+    if (Array.isArray(data.items)) return data.items;
+    
+    // Look for any array property inside the object
+    for (const key of Object.keys(data)) {
+      if (Array.isArray(data[key])) {
+        return data[key];
+      }
+    }
+  }
+  return [];
+}
+
 /**
  * Robust holiday fetcher that can make requests to Express server
  * OR gracefully fallback to client-side data operations if hosted dynamically/statically on Netlify.
  */
-export async function getHolidays(countryCode: string, year: number, apiKey: string): Promise<{ holidays: Holiday[]; isMock: boolean }> {
-  const normCC = countryCode.toLowerCase();
+export async function getHolidays(countryCode: string, year: number, apiKey: string): Promise<{ holidays: Holiday[]; isMock: boolean; fallbackReason?: string; errorTrace?: string }> {
+  const normCC = countryCode.trim().toUpperCase();
   
   try {
     // First attempt to invoke the back-end proxy
@@ -204,8 +223,10 @@ export async function getHolidays(countryCode: string, year: number, apiKey: str
 
     const data = await response.json();
     return {
-      holidays: data && Array.isArray(data.holidays) ? data.holidays : [],
-      isMock: !!data?.isMock
+      holidays: data ? extractHolidaysList(data.holidays) : [],
+      isMock: !!data?.isMock,
+      fallbackReason: data?.fallbackReason,
+      errorTrace: data?.errorTrace
     };
   } catch (error) {
     console.warn("[HOLIDAY SERVICE FALLBACK] Route /api/holidays not responding or static fallback triggered. Running in client mode.", error);
@@ -214,7 +235,7 @@ export async function getHolidays(countryCode: string, year: number, apiKey: str
     if (apiKey && apiKey.trim() !== "") {
       try {
         const queryDate = `${year}-01-01`;
-        const directUrl = `https://bs-sta-gateway.ext-abc.com/svc/holiday/api/v1/year?country_code=${normCC}&date=${queryDate}`;
+        const directUrl = `https://bs-sta-gateway.ext-abc.com/svc/holiday/api/v1/year?country_code=${normCC.toLowerCase()}&date=${queryDate}`;
         const gatewayRes = await fetch(directUrl, {
           method: "GET",
           headers: {
@@ -225,19 +246,46 @@ export async function getHolidays(countryCode: string, year: number, apiKey: str
 
         if (gatewayRes.ok) {
           const directData = await gatewayRes.json();
-          // Ensure directData is an array, or contains holidays array
-          const parsed = Array.isArray(directData) 
-            ? directData 
-            : (directData && Array.isArray(directData.holidays) ? directData.holidays : []);
-          return {
-            holidays: parsed,
-            isMock: false
-          };
+          let isActuallyError = false;
+          let errorMsgStr = "";
+
+          if (directData && typeof directData === "object" && (directData.message === "Server Error" || directData.error || (typeof directData.message === "string" && directData.message.includes("Error")))) {
+            isActuallyError = true;
+            errorMsgStr = directData.message || directData.error || "Internal direct exception";
+          }
+
+          const parsedList = isActuallyError ? [] : extractHolidaysList(directData);
+          if (parsedList.length > 0) {
+            return {
+              holidays: parsedList,
+              isMock: false
+            };
+          } else {
+            console.warn(`[DIRECT GATEWAY WARNING] Direct fetch returned empty list or error structure: ${errorMsgStr || "No lists"}. Swapping to client mock.`);
+            return {
+              holidays: generateMockHolidays(countryCode, year),
+              isMock: true,
+              errorTrace: errorMsgStr || "No lists from direct gateway",
+              fallbackReason: errorMsgStr 
+                ? `Direct Gateway returned trace: "${errorMsgStr}". Activated client mock dataset.`
+                : "Direct Gateway succeeded but returned 0 records. Activated client mock dataset."
+            };
+          }
         } else {
           console.warn(`[DIRECT GATEWAY FALLBACK FAILED] Status: ${gatewayRes.status}. Reverting to high-fidelity client mock.`);
+          return {
+            holidays: generateMockHolidays(countryCode, year),
+            isMock: true,
+            fallbackReason: `Direct gateway connection returned status ${gatewayRes.status}. Loaded local system.`
+          };
         }
       } catch (directErr) {
         console.warn("[DIRECT GATEWAY BLOCKED BY CORS] Running high-fidelity local simulation.", directErr);
+        return {
+          holidays: generateMockHolidays(countryCode, year),
+          isMock: true,
+          fallbackReason: `Connection to live gateway was blocked by CORS or network timeout. Loaded local system.`
+        };
       }
     }
 
@@ -252,8 +300,8 @@ export async function getHolidays(countryCode: string, year: number, apiKey: str
 /**
  * Robust date inspector that can query server or fallback to client evaluation
  */
-export async function checkHolidayDate(countryCode: string, dateStr: string, apiKey: string): Promise<{ holiday: Holiday | null; isMock: boolean }> {
-  const normCC = countryCode.toLowerCase();
+export async function checkHolidayDate(countryCode: string, dateStr: string, apiKey: string): Promise<{ holiday: Holiday | null; isMock: boolean; fallbackReason?: string }> {
+  const normCC = countryCode.trim().toUpperCase();
 
   try {
     const response = await fetch(`/api/check-date?country_code=${normCC}&date=${dateStr}&token=${encodeURIComponent(apiKey)}`);
@@ -266,14 +314,15 @@ export async function checkHolidayDate(countryCode: string, dateStr: string, api
     const data = await response.json();
     return {
       holiday: data.holiday,
-      isMock: data.isMock
+      isMock: !!data.isMock,
+      fallbackReason: data.fallbackReason
     };
   } catch (error) {
     console.warn("[HOLIDAY SERVICE FALLBACK] Route /api/check-date not responding. Running client calculation.", error);
     
     if (apiKey && apiKey.trim() !== "") {
       try {
-        const directUrl = `https://bs-sta-gateway.ext-abc.com/svc/holiday/api/v1/date?country_code=${normCC}&date=${dateStr}`;
+        const directUrl = `https://bs-sta-gateway.ext-abc.com/svc/holiday/api/v1/date?country_code=${normCC.toLowerCase()}&date=${dateStr}`;
         const gatewayRes = await fetch(directUrl, {
           method: "GET",
           headers: {
@@ -284,6 +333,27 @@ export async function checkHolidayDate(countryCode: string, dateStr: string, api
 
         if (gatewayRes.ok) {
           const directVal = await gatewayRes.json();
+          let isActuallyError = false;
+          let errorMsgStr = "";
+
+          if (directVal && typeof directVal === "object" && (directVal.message === "Server Error" || directVal.error || (typeof directVal.message === "string" && directVal.message.includes("Error")))) {
+            isActuallyError = true;
+            errorMsgStr = directVal.message || directVal.error || "Internal check error";
+          }
+
+          if (isActuallyError) {
+            console.warn(`[DIRECT CHECK WARNING] Direct check returned error: ${errorMsgStr}. Falling back to mock matching.`);
+            const parsedDate = new Date(dateStr);
+            const selectedYear = parsedDate.getUTCFullYear();
+            const clientList = generateMockHolidays(countryCode, selectedYear);
+            const matched = clientList.find(h => h.date === dateStr);
+            return {
+              holiday: matched || null,
+              isMock: true,
+              fallbackReason: `Direct check error message: "${errorMsgStr}"`
+            };
+          }
+
           return {
             holiday: directVal, // could be null
             isMock: false
@@ -302,7 +372,8 @@ export async function checkHolidayDate(countryCode: string, dateStr: string, api
 
     return {
       holiday: matched || null,
-      isMock: true
+      isMock: true,
+      fallbackReason: "Direct connection blocked/failed. Loaded client calculations."
     };
   }
 }

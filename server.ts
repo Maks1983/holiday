@@ -203,7 +203,8 @@ app.get("/api/holidays", async (req, res) => {
     return res.status(400).json({ error: "country_code parameter is required" });
   }
 
-  const normalizedCC = country_code.toLowerCase();
+  // Enterprise API lookup systems require standard ISO-3166-1 alpha-2 uppercase country codes (e.g. "NO", "SE")
+  const normalizedCC = country_code.trim().toUpperCase();
   const selectedYear = parseInt(year || String(new Date().getUTCFullYear()), 10);
   
   // Decide if we should do real fetch or mock fetch
@@ -215,7 +216,7 @@ app.get("/api/holidays", async (req, res) => {
       // Create request to ABCyber Holiday API
       // Since it's Lookup by Year, the endpoint takes "country_code" and "date" to get the year
       const queryDate = `${selectedYear}-01-01`;
-      const url = `https://bs-sta-gateway.ext-abc.com/svc/holiday/api/v1/year?country_code=${normalizedCC}&date=${queryDate}`;
+      const url = `https://bs-sta-gateway.ext-abc.com/svc/holiday/api/v1/year?country_code=${normalizedCC.toLowerCase()}&date=${queryDate}`;
 
       console.log(`[PROXY] Fetching real holidays from: ${url}`);
       
@@ -229,31 +230,86 @@ app.get("/api/holidays", async (req, res) => {
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error(`[PROXY ERROR] API returned status ${response.status}: ${errorText}`);
-        return res.status(response.status).json({ 
-          error: `API returned error status ${response.status}`,
-          details: errorText,
-          isMock: false
+        console.warn(`[PROXY WARNING] Gateway returned HTTP ${response.status}: ${errorText}. Engaging sandbox failover.`);
+        
+        const mockHolidays = generateMockHolidays(normalizedCC, selectedYear);
+        return res.json({
+          holidays: mockHolidays,
+          isMock: true,
+          errorTrace: `Gateway returned status ${response.status}`,
+          fallbackReason: `API Gateway is currently unreachable or unresponsive (HTTP ${response.status}: ${errorText || "Unresolvable"}). Loaded local high-fidelity dataset.`
         });
       }
 
       const data = await response.json();
+      
+      // Robustly extract array of holidays from external API response
+      let extractedHolidays: any[] = [];
+      let isActuallyError = false;
+      let errorMsgStr = "";
+
+      // Check if response contains message reporting a Server Error or query exception under HTTP 200
+      if (data && typeof data === "object") {
+        if (data.message === "Server Error" || data.error || (typeof data.message === "string" && data.message.includes("Error"))) {
+          isActuallyError = true;
+          errorMsgStr = data.message || data.error || "Internal response exception";
+        }
+      }
+
+      if (!isActuallyError) {
+        if (Array.isArray(data)) {
+          extractedHolidays = data;
+        } else if (data && typeof data === "object") {
+          if (Array.isArray(data.holidays)) {
+            extractedHolidays = data.holidays;
+          } else if (Array.isArray(data.data)) {
+            extractedHolidays = data.data;
+          } else if (Array.isArray(data.results)) {
+            extractedHolidays = data.results;
+          } else {
+            // Find any array property inside the object
+            for (const key of Object.keys(data)) {
+              if (Array.isArray(data[key])) {
+                extractedHolidays = data[key];
+                break;
+              }
+            }
+          }
+        }
+      }
+
+      // If we got an error or extracted listing is empty, trigger a smart hybrid local failover
+      if (isActuallyError || extractedHolidays.length === 0) {
+        console.warn(`[PROXY WARNING] Gateway returned empty list or error structure: ${errorMsgStr || "No lists"}. Engaging sandbox failover.`);
+        const mockHolidays = generateMockHolidays(normalizedCC, selectedYear);
+        return res.json({
+          holidays: mockHolidays,
+          isMock: true,
+          errorTrace: errorMsgStr || "No listings returned from gateway",
+          fallbackReason: errorMsgStr 
+            ? `Gateway returned a transaction exception: "${errorMsgStr}". Enabled simulated coverage.`
+            : `Live Gateway returned an empty dataset for ${normalizedCC} during year ${selectedYear}. Enabled simulated coverage.`
+        });
+      }
+
       return res.json({
-        holidays: data,
+        holidays: extractedHolidays,
         isMock: false
       });
     } catch (e: any) {
-      console.error(`[PROXY EXCEPTION]`, e);
-      return res.status(502).json({
-        error: "Failed to connect to the external Holiday API",
-        details: e.message || String(e),
-        isMock: false
+      console.warn(`[PROXY EXCEPTION]`, e);
+      const mockHolidays = generateMockHolidays(normalizedCC, selectedYear);
+      return res.json({
+        holidays: mockHolidays,
+        isMock: true,
+        errorTrace: e.message || String(e),
+        fallbackReason: `Connection to external API timed out or failed (${e.message || String(e)}). Enabled simulated coverage.`
       });
     }
   } else {
     // Return high-fidelity mock data
     console.log(`[MOCK] Returning mock data for ${normalizedCC} / ${selectedYear}`);
-    const mockHolidays = generateMockHolidays(normalizedCC.toUpperCase(), selectedYear);
+    const mockHolidays = generateMockHolidays(normalizedCC, selectedYear);
     return res.json({
       holidays: mockHolidays,
       isMock: true
@@ -269,12 +325,12 @@ app.get("/api/check-date", async (req, res) => {
     return res.status(400).json({ error: "country_code and date parameters are required" });
   }
 
-  const normalizedCC = country_code.toLowerCase();
+  const normalizedCC = country_code.trim().toUpperCase();
   const activeToken = token || process.env.HOLIDAY_API_KEY;
 
   if (activeToken && activeToken.trim() !== "" && activeToken !== "MY_GEMINI_API_KEY") {
     try {
-      const url = `https://bs-sta-gateway.ext-abc.com/svc/holiday/api/v1/date?country_code=${normalizedCC}&date=${date}`;
+      const url = `https://bs-sta-gateway.ext-abc.com/svc/holiday/api/v1/date?country_code=${normalizedCC.toLowerCase()}&date=${date}`;
 
       console.log(`[PROXY] Checking date from: ${url}`);
 
@@ -288,32 +344,64 @@ app.get("/api/check-date", async (req, res) => {
 
       if (!response.ok) {
         const errorText = await response.text();
-        return res.status(response.status).json({ 
-          error: `API returned error status ${response.status}`,
-          details: errorText,
-          isMock: false
+        console.warn(`[PROXY CHECK WARNING] HTTP status ${response.status}: ${errorText}. Swapping to local query match.`);
+        const parsedDate = new Date(date);
+        const selectedYear = parsedDate.getUTCFullYear();
+        const mockList = generateMockHolidays(normalizedCC, selectedYear);
+        const matched = mockList.find(h => h.date === date);
+        return res.json({
+          holiday: matched || null,
+          isMock: true,
+          fallbackReason: `HTTP status ${response.status}: ${errorText || "Gateway error"}`
         });
       }
 
       const data = await response.json();
-      // The API returns the Holiday Object if valid, or null inside data/body if it's not a holiday
-      // Note the endpoint says: "The endpoint will return null inside the data object if the date is not a public holiday"
+      
+      let isActuallyError = false;
+      let errorMsgStr = "";
+      if (data && typeof data === "object") {
+        if (data.message === "Server Error" || data.error || (typeof data.message === "string" && data.message.includes("Error"))) {
+          isActuallyError = true;
+          errorMsgStr = data.message || data.error || "Response contains server error";
+        }
+      }
+
+      if (isActuallyError) {
+        console.warn(`[PROXY CHECK WARNING] Inner gateway message error. Swapping to local query match.`);
+        const parsedDate = new Date(date);
+        const selectedYear = parsedDate.getUTCFullYear();
+        const mockList = generateMockHolidays(normalizedCC, selectedYear);
+        const matched = mockList.find(h => h.date === date);
+        return res.json({
+          holiday: matched || null,
+          isMock: true,
+          fallbackReason: errorMsgStr
+        });
+      }
+
+      // The API returns the Holiday Object if valid, or null inside data if it's not a holiday
       return res.json({
-        holiday: data, // Could be null
+        holiday: data,
         isMock: false
       });
     } catch (e: any) {
-      return res.status(502).json({
-        error: "Failed to connect to the external Holiday API",
-        details: e.message || String(e),
-        isMock: false
+      console.warn(`[PROXY CHECK EXCEPTION] ${e.message}. Swapping to local query match.`);
+      const parsedDate = new Date(date);
+      const selectedYear = parsedDate.getUTCFullYear();
+      const mockList = generateMockHolidays(normalizedCC, selectedYear);
+      const matched = mockList.find(h => h.date === date);
+      return res.json({
+        holiday: matched || null,
+        isMock: true,
+        fallbackReason: e.message || String(e)
       });
     }
   } else {
     // Match against mock data
     const parsedDate = new Date(date);
     const selectedYear = parsedDate.getUTCFullYear();
-    const mockList = generateMockHolidays(normalizedCC.toUpperCase(), selectedYear);
+    const mockList = generateMockHolidays(normalizedCC, selectedYear);
     
     const matched = mockList.find(h => h.date === date);
     return res.json({
