@@ -32,14 +32,10 @@ export async function getHolidays(
   const normCC = countryCode.trim().toUpperCase();
   const cleanEndpoint = (apiEndpoint || "https://bs-sta-gateway.ext-abc.com").trim().replace(/\/$/, "");
 
-  if (!apiKey || apiKey.trim() === "") {
-    throw new Error("Access Token is missing. Please configure your ABCyber bearer token under the settings tab.");
-  }
-
   try {
     // First attempt to invoke the back-end proxy
     const response = await fetch(
-      `/api/holidays?country_code=${normCC}&year=${year}&token=${encodeURIComponent(apiKey)}&endpoint=${encodeURIComponent(cleanEndpoint)}`
+      `/api/holidays?country_code=${normCC}&year=${year}&token=${encodeURIComponent(apiKey || "")}&endpoint=${encodeURIComponent(cleanEndpoint)}`
     );
     
     const contentType = response.headers.get("content-type");
@@ -110,7 +106,7 @@ export async function getHolidays(
     } catch (directErr: any) {
       console.error("[DIRECT GATEWAY BLOCKED OR FAILED]", directErr);
       throw new Error(
-        directErr.message || "Failed to connect to ABCyber Holiday API (Possible CORS or network timeout)."
+        directErr.message || "Failed to connect to Global Holiday API (Possible CORS or network timeout)."
       );
     }
   }
@@ -128,13 +124,9 @@ export async function checkHolidayDate(
   const normCC = countryCode.trim().toUpperCase();
   const cleanEndpoint = (apiEndpoint || "https://bs-sta-gateway.ext-abc.com").trim().replace(/\/$/, "");
 
-  if (!apiKey || apiKey.trim() === "") {
-    throw new Error("Access Token is missing. Please configure your ABCyber bearer token under the settings tab.");
-  }
-
   try {
     const response = await fetch(
-      `/api/check-date?country_code=${normCC}&date=${dateStr}&token=${encodeURIComponent(apiKey)}&endpoint=${encodeURIComponent(cleanEndpoint)}`
+      `/api/check-date?country_code=${normCC}&date=${dateStr}&token=${encodeURIComponent(apiKey || "")}&endpoint=${encodeURIComponent(cleanEndpoint)}`
     );
     
     const contentType = response.headers.get("content-type");
@@ -201,7 +193,7 @@ export async function checkHolidayDate(
     } catch (directErr: any) {
       console.error("[DIRECT GATEWAY CHECK BLOCKED OR FAILED]", directErr);
       throw new Error(
-        directErr.message || "Failed to check date on ABCyber Holiday API (Possible CORS or network timeout)."
+        directErr.message || "Failed to check date on Global Holiday API (Possible CORS or network timeout)."
       );
     }
   }

@@ -50,7 +50,7 @@ export default function DateChecker({ countryCode, apiKey, apiEndpoint }: DateCh
         </div>
         <div>
           <h2 className="serif text-xl font-bold text-[#2c2c24]">Direct Red Day Auditor</h2>
-          <p className="text-xs text-[#2c2c24]/60">Query individual dates on the ABCyber Microservice directly</p>
+          <p className="text-xs text-[#2c2c24]/60">Query individual dates on the Holiday Microservice directly</p>
         </div>
       </div>
 
@@ -176,7 +176,7 @@ export default function DateChecker({ countryCode, apiKey, apiEndpoint }: DateCh
             <div className="flex justify-between items-center text-[10px] text-[#2c2c24]/50 mt-3 px-1">
               <span>AUDIT TIMEFRAME: {date}</span>
               <span className="font-mono bg-[#f5f5f0] text-[#2c2c24]/60 leading-none py-1 px-2.5 rounded-md uppercase font-semibold">
-                ABCyber Live Source
+                Live API Source
               </span>
             </div>
           </div>

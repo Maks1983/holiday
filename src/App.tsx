@@ -25,11 +25,11 @@ import {
 
 export default function App() {
   const [apiKey, setApiKey] = useState<string>(() => {
-    return localStorage.getItem("abcyber_holiday_api_key") || "";
+    return localStorage.getItem("redday_holiday_api_key") || localStorage.getItem("abcyber_holiday_api_key") || "";
   });
 
   const [apiEndpoint, setApiEndpoint] = useState<string>(() => {
-    return localStorage.getItem("abcyber_holiday_api_endpoint") || "https://bs-sta-gateway.ext-abc.com";
+    return localStorage.getItem("redday_holiday_api_endpoint") || localStorage.getItem("abcyber_holiday_api_endpoint") || "https://bs-sta-gateway.ext-abc.com";
   });
 
   const [countryCode, setCountryCode] = useState("NO");
@@ -41,32 +41,48 @@ export default function App() {
   // Views navigation state
   const [activeView, setActiveView] = useState<"calendar" | "timeline" | "auditor" | "settings">("calendar");
 
+  const [servedFromCache, setServedFromCache] = useState<boolean | null>(null);
+  const [selectedContinent, setSelectedContinent] = useState<string>("All");
+
+  // Filter countries by Selected Continent
+  const filteredCountries = selectedContinent === "All" 
+    ? COUNTRIES 
+    : COUNTRIES.filter(c => c.continent === selectedContinent);
+
   // Keep API key persisted in local storage
   const handleApiKeyChange = (newKey: string) => {
     setApiKey(newKey);
-    localStorage.setItem("abcyber_holiday_api_key", newKey);
+    localStorage.setItem("redday_holiday_api_key", newKey);
   };
 
   // Keep API Endpoint persisted in local storage
   const handleApiEndpointChange = (newEndpoint: string) => {
     setApiEndpoint(newEndpoint);
-    localStorage.setItem("abcyber_holiday_api_endpoint", newEndpoint);
+    localStorage.setItem("redday_holiday_api_endpoint", newEndpoint);
   };
 
   // Fetch holidays list
   const fetchHolidays = async () => {
-    if (!apiKey.trim()) {
-      setHolidays([]);
-      setError(null);
-      setLoading(false);
-      return;
-    }
     setLoading(true);
     setError(null);
+    setServedFromCache(null);
     try {
       const data = await getHolidays(countryCode, year, apiKey, apiEndpoint);
       const list = data && Array.isArray(data.holidays) ? data.holidays : [];
       setHolidays(list);
+      
+      // Look up cached status from the server
+      try {
+        const response = await fetch(
+          `/api/holidays?country_code=${countryCode.toUpperCase()}&year=${year}&token=${encodeURIComponent(apiKey || "")}&endpoint=${encodeURIComponent(apiEndpoint || "")}`
+        );
+        if (response.ok) {
+          const resJson = await response.json();
+          setServedFromCache(!!resJson.servedFromCache);
+        }
+      } catch (e) {
+        console.warn("[APP] Could not fetch cache status indicator", e);
+      }
     } catch (err: any) {
       console.error(err);
       setError(err.message || String(err));
@@ -97,13 +113,39 @@ export default function App() {
                 Holiday Horizon
               </h1>
               <p className="text-[10px] uppercase tracking-wider font-semibold opacity-50 mt-1" id="app-subtitle">
-                ABCyber AB Enterprise Ecosystem
+                Global Holiday Auditing System
               </p>
             </div>
           </div>
 
           {/* Quick Select Config Panels */}
           <div className="flex items-center gap-2 flex-wrap" id="header-selectors">
+            {/* Continent Selector Dropdown */}
+            <div className="relative">
+              <select
+                value={selectedContinent}
+                onChange={(e) => {
+                  const cont = e.target.value;
+                  setSelectedContinent(cont);
+                  const list = cont === "All" ? COUNTRIES : COUNTRIES.filter(c => c.continent === cont);
+                  if (list.length > 0) {
+                    setCountryCode(list[0].code);
+                  }
+                }}
+                className="pl-3 pr-8 py-2 bg-[#fdfdfb]/80 border border-[#5a5a40]/20 text-[#2c2c24] text-xs font-semibold rounded-xl focus:outline-none focus:border-[#5a5a40] focus:ring-1 focus:ring-[#5a5a40] transition-all appearance-none cursor-pointer"
+                id="continent-selector"
+              >
+                <option value="All">🌍 All Continents</option>
+                <option value="Europe">🇪🇺 Europe</option>
+                <option value="North America">🇺🇸 North America</option>
+                <option value="South America">🇧🇷 South America</option>
+                <option value="Asia">🇯🇵 Asia</option>
+                <option value="Oceania">🇳🇿 Oceania</option>
+                <option value="Africa">🇿🇦 Africa</option>
+              </select>
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-[#5a5a40]/60 text-[10px]">▼</div>
+            </div>
+
             {/* Country Dropdown */}
             <div className="relative">
               <select
@@ -112,7 +154,7 @@ export default function App() {
                 className="pl-3 pr-8 py-2 bg-[#fdfdfb]/80 border border-[#5a5a40]/20 text-[#2c2c24] text-xs font-semibold rounded-xl focus:outline-none focus:border-[#5a5a40] focus:ring-1 focus:ring-[#5a5a40] transition-all appearance-none cursor-pointer"
                 id="country-selector"
               >
-                {COUNTRIES.map(c => (
+                {filteredCountries.map(c => (
                   <option key={c.code} value={c.code}>
                     {c.flag}  {c.name}
                   </option>
@@ -139,28 +181,45 @@ export default function App() {
             </div>
 
             {/* Connection Status Indicator */}
-            <button
-              onClick={() => setActiveView("settings")}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border transition-all ${
-                apiKey.trim() === ""
-                  ? "bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100"
-                  : "bg-emerald-50 text-emerald-850 border-emerald-150 hover:bg-emerald-100"
-              }`}
-              id="status-header-indicator"
-              title="Click to view API Settings"
-            >
-              {apiKey.trim() === "" ? (
-                <>
-                  <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0 select-none animate-pulse" />
-                  <span className="hidden sm:inline">Credentials Pending</span>
-                </>
-              ) : (
-                <>
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                  <span className="hidden sm:inline">ABC Gateway Active</span>
-                </>
+            <div className="flex items-center gap-1.5" id="status-badges-group">
+              {servedFromCache !== null && (
+                <div
+                  className={`flex items-center gap-1 text-[11px] font-bold px-2.5 py-2.5 rounded-xl border select-none transition-all ${
+                    servedFromCache
+                      ? "bg-sky-50 text-sky-850 border-sky-150"
+                      : "bg-[#2c2c24]/5 text-[#2c2c24]/60 border-stone-200"
+                  }`}
+                  id="header-cache-status-badge"
+                  title={servedFromCache ? "Retrieved immediately from the server cache flat-file database" : "Queried directly from live gateway API"}
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${servedFromCache ? "bg-sky-500 animate-pulse" : "bg-teal-500"}`} />
+                  <span>{servedFromCache ? "Cached DB" : "Live API"}</span>
+                </div>
               )}
-            </button>
+
+              <button
+                onClick={() => setActiveView("settings")}
+                className={`flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-[11px] font-bold border transition-all cursor-pointer ${
+                  apiKey.trim() === ""
+                    ? "bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100"
+                    : "bg-emerald-50 text-emerald-850 border-emerald-150 hover:bg-emerald-100"
+                }`}
+                id="status-header-indicator"
+                title="Click to view API Settings"
+              >
+                {apiKey.trim() === "" ? (
+                  <>
+                    <AlertCircle className="w-3 text-amber-600 shrink-0 select-none animate-pulse" />
+                    <span>Config Required</span>
+                  </>
+                ) : (
+                  <>
+                    <ShieldCheck className="w-3 text-emerald-600 shrink-0" />
+                    <span>ABC Gateway Active</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       </header>
@@ -224,42 +283,19 @@ export default function App() {
 
         {/* Content Viewer pane */}
         <div id="dashboard-content-viewer" className="relative min-h-96">
-          {!apiKey.trim() && activeView !== "settings" ? (
-            <div className="bg-white border border-[#5a5a40]/10 rounded-3xl p-12 text-center max-w-xl mx-auto flex flex-col items-center space-y-6 shadow-xs" id="app-credentials-missing-screen">
-              <div className="p-4 bg-amber-50 text-amber-700 rounded-full border border-amber-100">
-                <ShieldCheck className="w-8 h-8 opacity-90 animate-pulse" />
-              </div>
-              <div className="space-y-2">
-                <h3 className="serif text-2xl font-bold text-[#2c2c24]">Authorization Key Required</h3>
-                <p className="text-xs text-[#2c2c24]/75 leading-relaxed max-w-md mx-auto">
-                  To audit enterprise holiday calendars, you must configure your access token in settings. 
-                  In alignment with strict data audit standards, local simulated mock datasets have been fully decommissioned.
-                </p>
-                <div className="bg-[#f5f5f0] border border-[#5a5a40]/10 rounded-xl p-4 text-left max-w-md mx-auto text-[11px] space-y-1.5 text-[#2c2c24]/80">
-                  <span className="font-semibold block text-[#2c2c24]">Audit Directives:</span>
-                  <div className="flex items-start gap-2">
-                    <span className="text-amber-600 font-bold">•</span>
-                    <span>No unverified mockup fallbacks can be loaded.</span>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <span className="text-amber-600 font-bold">•</span>
-                    <span>An active Access Token (Bearer Auth) is required for each query.</span>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <span className="text-amber-600 font-bold">•</span>
-                    <span>Verify your connection gateway endpoint setting is pointing to the correct API node.</span>
-                  </div>
-                </div>
-              </div>
-              <div className="flex justify-center">
-                <button
-                  onClick={() => setActiveView("settings")}
-                  className="px-5 py-2.5 bg-[#5A5A40] hover:bg-[#484833] text-white text-xs font-semibold rounded-xl transition-all shadow-sm cursor-pointer"
-                >
-                  Configure Gateway Settings
-                </button>
-              </div>
-            </div>
+          {activeView === "settings" ? (
+            <AnimatePresence mode="wait">
+              <motion.div
+                key="settings"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.15 }}
+                id="tab-content-animator"
+              >
+                <Settings apiKey={apiKey} onChangeApiKey={handleApiKeyChange} apiEndpoint={apiEndpoint} onChangeApiEndpoint={handleApiEndpointChange} />
+              </motion.div>
+            </AnimatePresence>
           ) : loading ? (
             <div className="bg-white border border-[#5a5a40]/10 rounded-3xl p-16 text-center flex flex-col items-center justify-center space-y-3 shadow-xs" id="app-loading-screen">
               <RefreshCw className="w-10 h-10 text-[#5a5a40] animate-spin" />
@@ -274,11 +310,11 @@ export default function App() {
               <div className="space-y-1.5">
                 <h3 className="serif text-2xl font-bold text-[#a65d52]">API Connection Blocked</h3>
                 <p className="text-xs text-[#2c2c24] opacity-85 leading-relaxed">
-                  The application tried to call the ABCyber Holiday API but the gateway returned a query exception:
+                  The application tried to call the Global Holiday Gateway but it returned a query exception:
                   <code className="block bg-[#a65d52]/10 p-2.5 rounded-lg font-mono text-[11px] mt-2 select-all text-[#a65d52] break-all border border-[#a65d52]/15">{error}</code>
                 </p>
                 <p className="text-xs text-[#2c2c24]/60 pt-1">
-                  💡 Double check your token is typed accurately in Settings. Alternatively, configure your access token in a local <code>.env</code> file under <code>HOLIDAY_API_KEY</code>.
+                  💡 <b>Pro-Tip:</b> If you don't have active Gateway API credentials, you can check Sweden (SE) 2026, Norway (NO) 2026, and Denmark (DK) 2026 which have been shared and cached directly in our flat-file database!
                 </p>
               </div>
               <div className="flex gap-3">
@@ -319,9 +355,6 @@ export default function App() {
                 {activeView === "auditor" && (
                   <DateChecker countryCode={countryCode} apiKey={apiKey} apiEndpoint={apiEndpoint} />
                 )}
-                {activeView === "settings" && (
-                  <Settings apiKey={apiKey} onChangeApiKey={handleApiKeyChange} apiEndpoint={apiEndpoint} onChangeApiEndpoint={handleApiEndpointChange} />
-                )}
               </motion.div>
             </AnimatePresence>
           )}
@@ -336,10 +369,10 @@ export default function App() {
           <div className="space-y-1.5 text-center md:text-left">
             <p className="text-[#2c2c24] font-bold flex items-center justify-center md:justify-start gap-1">
               <Building className="w-3.5 h-3.5 text-[#5A5A40]" />
-              ABCyber AB Enterprise Ecosystem
+              Global Holiday Audit Network
             </p>
             <p className="max-w-md text-[11px] leading-relaxed text-[#2c2c24]/70">
-              Maintained and distributed by ABCyber AB. This local auditor application is designed for real-time validation of public red days, scheduling closures, and business booking models.
+              Maintained by Global Holiday Systems. This local auditor application is designed for real-time validation of public red days, scheduling closures, and business booking models.
             </p>
           </div>
 
@@ -347,17 +380,17 @@ export default function App() {
           <div className="flex flex-col sm:flex-row md:flex-col lg:flex-row gap-4 items-center md:items-end text-[11px]" id="corporate-contact-details">
             <span className="flex items-center gap-1 text-[#2c2c24]/80">
               <Mail className="w-3.5 h-3.5 text-[#5a5a40]" />
-              support@abcyber.com
+              support@holiday-audit.com
             </span>
             <span className="flex items-center gap-1 text-[#2c2c24]/80">
               <Phone className="w-3.5 h-3.5 text-[#5a5a40]" />
-              +46 8 437 335 00
+              +00 000 00 00
             </span>
           </div>
 
         </div>
         <div className="max-w-7xl mx-auto border-t border-[#5a5a40]/10 mt-6 pt-4 text-center text-[10px] text-[#2c2c24]/50" id="copyright-box">
-          © {new Date().getFullYear()} ABCyber AB. All enterprise rights reserved. Under MIT Local Auditor License.
+          © {new Date().getFullYear()} Global Holiday Systems. All enterprise rights reserved. Under MIT Local Auditor License.
         </div>
       </footer>
     </div>

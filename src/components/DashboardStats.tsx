@@ -179,7 +179,7 @@ export default function DashboardStats({ holidays, year }: DashboardStatsProps) 
             </div>
 
             <p className="text-xs text-[#2c2c24]/70 mb-4">
-              Analyzing the types assigned in the ABCyber dataset. Some holidays may feature multiple classifications.
+              Analyzing the types assigned in the Holiday dataset. Some holidays may feature multiple classifications.
             </p>
 
             <div className="space-y-4" id="type-cards-list">
